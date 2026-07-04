@@ -1,0 +1,50 @@
+from typing import Any
+import logging
+
+from ai.planner import create_plan
+from knowledge_base import query_knowledge_base
+from rag_pipeline import _call_llm, build_context_block
+
+logger = logging.getLogger(__name__)
+
+
+class AgentExecutor:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def run(self, question: str) -> str:
+        plan = create_plan(question)
+
+        all_context = []
+        logger.info(f"Plan generated with {len(plan.steps)} steps")
+
+        for step in plan.steps:
+            logger.info(f"Executing step {step.step}: {step.action}")
+
+            if step.action == "retrieve":
+                results = query_knowledge_base(self.collection, step.query)
+                context = build_context_block(results)
+                all_context.append(context)
+
+            elif step.action == "infer":
+                all_context.append(
+                    f"Inference step based on: {step.query}"
+                )
+
+            elif step.action == "compose":
+                all_context.append(
+                    f"Composition instruction: {step.query}"
+                )
+
+        final_prompt = f"""
+You are ICRA AI Agent.
+
+Use the following gathered context:
+
+{chr(10).join(all_context)}
+
+Now answer the user question:
+{question}
+"""
+
+        return _call_llm(final_prompt)
