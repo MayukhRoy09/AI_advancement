@@ -1,0 +1,64 @@
+import json
+from dataclasses import dataclass
+from typing import List
+
+import anthropic
+import config
+
+
+@dataclass
+class PlanStep:
+    step: int
+    action: str
+    query: str
+
+
+@dataclass
+class ReasoningPlan:
+    steps: List[PlanStep]
+
+
+SYSTEM_PROMPT = """
+You are a planning engine for a campus assistant.
+
+Break the user question into minimal reasoning steps.
+
+Each step must be:
+- retrieval OR inference OR composition
+
+Return ONLY valid JSON in this format:
+{
+  "steps": [
+    {
+      "step": 1,
+      "action": "retrieve | infer | compose",
+      "query": "what to search"
+    }
+  ]
+}
+"""
+
+
+def create_plan(question: str) -> ReasoningPlan:
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    response = client.messages.create(
+        model=config.CLAUDE_MODEL,
+        max_tokens=500,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": question}],
+    )
+
+    content = response.content[0].text
+
+    try:
+        data = json.loads(content)
+        steps = [
+            PlanStep(**step) for step in data.get("steps", [])
+        ]
+        return ReasoningPlan(steps=steps)
+    except Exception:
+        # fallback: single-step plan
+        return ReasoningPlan(
+            steps=[PlanStep(step=1, action="retrieve", query=question)]
+        )
